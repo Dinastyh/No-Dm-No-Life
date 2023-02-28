@@ -39,14 +39,16 @@ $computerName = $env:COMPUTERNAME
 
 # Net data request
 $net = [PSCustomObject]@{
-  AdaptersInfo = $adapterInfo
-  Proxy = $proxy
-  Vpn = $vpn
-  DomainName = $domainName
+  adaptersInfo = $adapterInfo
+  proxy = $proxy
+  vpn = $vpn
+  domainName = $domainName
   computerName = $computerName
 }
 
 #Miss wifi 
+
+
 
 #------------- Default Web-Browser -------------#
 
@@ -87,14 +89,49 @@ $defaultWebBrowser = [PSCustomObject]@{
 
 #------------- Firefox -------------#
 
+# Retrieve version information
+$firefoxPath = 'HKLM:\SOFTWARE\Mozilla\Mozilla Firefox'
+$firefoxVersion = (Get-ItemProperty -Path $firefoxPath -Name "CurrentVersion").CurrentVersion
 
+# Retrieve add-ons installed
+$firefoxAddOnsPath = "$env:APPDATA\Mozilla\Firefox\Profiles\*\extensions"
+$firefoxAddOns = Get-ChildItem -Path $firefoxAddOnsPath -Directory | ForEach-Object { $_.Name }
 
+# Retrieve installed user certificates
+$firefoxCertificatesPath ='"Cert:\CurrentUser\My'
+$firefoxCertificates = Get-ChildItem -Path $firefoxCertificatesPath | Select-Object -ExpandProperty Thumbprint
+
+# Retrieve registered identifiers
+$firefoxIdentifiersPath = 'HKCU:\Software\Mozilla\Firefox\RegisteredApplications'
+$firefoxIdentifiers = Get-Item -Path $firefoxIdentifiersPath | Select-Object -ExpandProperty Property
+
+# Get firefox Profiles
+$firefoxProfilePath = "$env:APPDATA\Mozilla\Firefox\Profiles\*"
+$firefoxProfile = (Get-ChildItem -Path $firefoxProfilePath -Directory | Select-Object -Last 1).FullName
+
+# Get favorites 
+$firefoxFavoritesPath = "$FirefoxProfile\bookmarkbackups"
+$firefoxFavorites = (Get-ChildItem -Path $firefoxFavoritesPath -Filter "bookmarks*.json" | Select-Object -Last 1).FullName
+
+# Get history
+$firefoxHistoryPath = "$FirefoxProfile\places.sqlite"
+$firefoxHistory = (Get-ChildItem -Path $firefoxHistoryPath).FullName
+
+$firefox = [PSCustomObject]@{
+  version = $firefoxVersion
+  addOns = $firefoxAddOns
+  certificates = $firefoxCertificates
+  identifiers = $firefoxIdentifiers
+  favorites = $firefoxFavorites
+  history = $firefoxHistory
+}
 #------------- Export json -------------#
 
 # Recap object
 $finalObject = [PSCustomObject]@{
-  Net = $net
-  DefaultWebBrowser = $defaultWebBrowser
+  net = $net
+  defaultWebBrowser = $defaultWebBrowser
+  firefox = $firefox
 }
 
 # Save data as json file
