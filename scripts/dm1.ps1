@@ -139,6 +139,36 @@ $accounts = [PSCustomObject]@{
   cached = $cachedAccounts
 }
 
+#------------- Applications Information -------------#
+
+# Get a list of installed applications
+$applications32Path = "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+$applicationsPath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" 
+$applications = Get-ItemProperty $applications32Path, $applicationsPath|
+  Where-Object { $_.DisplayName -and !$_.SystemComponent } |
+  Select-Object DisplayName, Publisher, DisplayVersion
+
+#------------- Start Menu -------------#
+
+# Get information of start menu
+$startMenuPath = "$env:APPDATA\Microsoft\Windows\Start Menu"
+$startMenuItems = Get-ChildItem -Path $startMenuPath -Recurse | Where-Object { $_.Name -notlike "desktop.ini" }
+
+#------------- Scheduled Tasks -------------#
+
+# Get a list of scheduled tasks
+$scheduledTasks = Get-ScheduledTask | Select-Object TaskName, TaskPath, State, LastRunTime, NextRunTime
+
+#------------- Active Process -------------#
+
+# Get a list of active process
+$activeProcess = Get-Process | Select-Object Id,Name,MainWindowTitle
+
+#------------- Activeport -------------#
+
+# Get a list of active port
+$activeTCPPorts = Get-NetTCPConnection | Where-Object {$_.State -eq "Established"} | Select-Object LocalAddress,LocalPort,RemoteAddress,RemotePort | Format-Table
+
 #------------- Export json -------------#
 
 # Recap object
@@ -147,6 +177,11 @@ $finalObject = [PSCustomObject]@{
   defaultWebBrowser = $defaultWebBrowser
   firefox = $firefox
   accounts = $accounts
+  applications = $applications
+  startMenu = $startMenuItems
+  scheduledTasks = $scheduledTasks
+  activeProcess = $activeProcess
+  activePort = $activeTCPPorts
 }
 
 # Save data as json file
