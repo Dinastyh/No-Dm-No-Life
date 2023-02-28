@@ -169,6 +169,100 @@ $activeProcess = Get-Process | Select-Object Id,Name,MainWindowTitle
 # Get a list of active port
 $activeTCPPorts = Get-NetTCPConnection | Where-Object {$_.State -eq "Established"} | Select-Object LocalAddress,LocalPort,RemoteAddress,RemotePort | Format-Table
 
+#------------- Security -------------#
+
+# Get Os information
+$os = Get-CimInstance Win32_OperatingSystem
+
+$osInformations = [PSCustomObject]@{
+  osCaption = $os.Caption
+  osVersion = $os.Version
+  osBuild = $os.BuildNumber
+}
+
+$servicePack = [PSCustomObject]@{
+  majorVersion = $os.ServicePackMajorVersion
+  minorVersion = $os.ServicePackMinorVersion
+}
+
+# Retrieve the active firewall profile
+$firewall = Get-NetFirewallProfile -Profile Domain, Public, Private
+
+# Retrieve the active firewall rules for the profile
+$rules = $firewall | Get-NetFirewallRule | Where-Object {$_.Enabled -eq "True"}
+
+# Save the active NAT and filter rules
+$natRules = $rules | Where-Object {$_.Action -eq "Allow" -and $_.Direction -eq "Inbound" -and $_.EdgeTraversalPolicy -eq "Allow" -and $_.Protocol -eq "TCP"}
+$filterRules = $rules | Where-Object {$_.Action -eq "Allow" -and $_.Direction -eq "Inbound" -and $_.Protocol -eq "TCP" -and $_.Program -ne $null}
+
+$firewallRules = [PSCustomObject]@{
+  natRules = $natRules
+  filterRules = $filterRules
+}
+
+# Retrieve the list of installed antivirus software
+$antivirus = Get-WmiObject -Namespace "root\SecurityCenter2" -Class AntiVirusProduct
+$antivirusList = [System.Collections.ArrayList]::new
+# Save the name and version of each installed antivirus software
+Write-Output "Installed antivirus software:"
+foreach ($av in $antivirus)
+{
+  $currentAntivirus = [PSCustomObject]@{
+    name = $av.displayName
+    version = $av.displayVersion
+  }
+  $antivirusList.add($currentAntivirus)
+}
+
+# Retrieve the current SRP or AppLocker configuration
+$configSRP = Get-CimInstance -Namespace "root/SecurityCenter2" -ClassName "SecurityCenter2" |
+  Select-Object -ExpandProperty AppLockerEnabled, IsSoftwareRestrictionPolicyEnforced
+
+
+# Retrieve the list of applied GPOs
+$gpos = Get-GpResultantSetOfPolicy -ReportType Computer -ErrorAction SilentlyContinue
+
+$GPOInformations = [System.Collections.ArrayList]::new
+foreach ($gpo in $gpos.AppliedGPOs)
+{
+  $currentGPO = [PSCustomObject]@{
+    name = $gpo.DisplayName
+    id = $gpo.GPOID
+  }
+  $GPOInformations.add($currentGPO)
+}
+
+$domainControllersList = [System.Collections.ArrayList]::new
+
+# Retrieve the list of domain controllers
+$domain = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()
+$domainControllers = $domain.DomainControllers
+
+# save the list of domain controllers with names and IP addresses
+Write-Output "Domain Controllers:"
+foreach ($dc in $domainControllers)
+{
+  $ip = ([System.Net.Dns]::GetHostAddresses($dc.Name) | Where-Object { $_.AddressFamily -eq "InterNetwork" }).IPAddressToString
+  $currentDc = [PSCustomObject]@{
+    name = $dc.name
+    ip = $ip
+  }
+  $domainControllersList.add($curretDc)
+}
+
+
+
+$security = [PSCustomObject]@{
+  os = $osInformations
+  servicePack = $servicePack
+  patches = Get-HotFix | Select-Object -Property Description, HotFixId
+  firewallRules = $firewallRules
+  antivirus = $antivirusList
+  appLockerEnabled = $configSRP.appLockerEnabled
+  SRPEnforced = $configSRP.IsSoftwareRestrictionPolicyEnforced
+  GPOs = $GPOInformations
+  domainControllers = $domainControllersList
+}
 #------------- Export json -------------#
 
 # Recap object
@@ -182,6 +276,7 @@ $finalObject = [PSCustomObject]@{
   scheduledTasks = $scheduledTasks
   activeProcess = $activeProcess
   activePort = $activeTCPPorts
+  Security = $security
 }
 
 # Save data as json file
