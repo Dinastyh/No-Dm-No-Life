@@ -125,6 +125,20 @@ $firefox = [PSCustomObject]@{
   favorites = $firefoxFavorites
   history = $firefoxHistory
 }
+
+#------------- Longon cached -------------#
+
+# Get the currently connected user accounts
+$connectedAccounts = Get-LocalUser | Where-Object { $_.Enabled -eq $true}
+
+# Get the cached accounts on the local machine
+$cachedAccounts = Get-WmiObject -Class Win32_UserAccount | Where-Object { $_.LocalAccount -eq $true }
+
+$accounts = [PSCustomObject]@{
+  logged = $connectedAccounts
+  cached = $cachedAccounts
+}
+
 #------------- Export json -------------#
 
 # Recap object
@@ -132,6 +146,7 @@ $finalObject = [PSCustomObject]@{
   net = $net
   defaultWebBrowser = $defaultWebBrowser
   firefox = $firefox
+  accounts = $accounts
 }
 
 # Save data as json file
