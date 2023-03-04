@@ -211,7 +211,7 @@ foreach ($av in $antivirus)
     name = $av.displayName
     version = $av.displayVersion
   }
-  $antivirusList.add($currentAntivirus)
+  $antivirusList.Add($currentAntivirus)
 }
 
 # Retrieve the current SRP or AppLocker configuration
@@ -229,7 +229,7 @@ foreach ($gpo in $gpos.AppliedGPOs)
     name = $gpo.DisplayName
     id = $gpo.GPOID
   }
-  $GPOInformations.add($currentGPO)
+  $GPOInformations.Add($currentGPO)
 }
 
 $domainControllersList = [System.Collections.ArrayList]::new
@@ -247,7 +247,7 @@ foreach ($dc in $domainControllers)
     name = $dc.name
     ip = $ip
   }
-  $domainControllersList.add($curretDc)
+  $domainControllersList.Add($curretDc)
 }
 
 
@@ -281,3 +281,6 @@ $finalObject = [PSCustomObject]@{
 
 # Save data as json file
 ConvertTo-Json $finalObject | Set-Content result.json
+
+
+#------------- Crendential Collect -------------#
