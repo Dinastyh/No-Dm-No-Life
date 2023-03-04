@@ -1,4 +1,4 @@
-
+import-module "sqlite" -force
 #------------- Network -------------#
 
 # Get network adapters and select wireless adapters only
