@@ -247,7 +247,7 @@ foreach ($dc in $domainControllers)
     name = $dc.name
     ip = $ip
   }
-  $domainControllersList.Add($curretDc)
+  $domainControllersList.Add($currentDc)
 }
 
 
