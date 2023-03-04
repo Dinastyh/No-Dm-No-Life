@@ -59,7 +59,7 @@ foreach ($browser in $browserList)
 {
   $browserData = [PSCustomObject]@{
     Name = $browser.DisplayName
-    version = null
+    version = $null
     addOns = @()
     certificates = @()
     identifiers = @()
