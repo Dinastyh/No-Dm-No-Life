@@ -202,7 +202,7 @@ $firewallRules = [PSCustomObject]@{
 
 # Retrieve the list of installed antivirus software
 $antivirus = Get-WmiObject -Namespace "root\SecurityCenter2" -Class AntiVirusProduct
-$antivirusList = [System.Collections.ArrayList]@()
+$antivirusList = New-Object System.Collections.ArrayList
 # Save the name and version of each installed antivirus software
 Write-Output "Installed antivirus software:"
 foreach ($av in $antivirus)
@@ -222,7 +222,7 @@ $configSRP = Get-CimInstance -Namespace "root/SecurityCenter2" -ClassName "Secur
 # Retrieve the list of applied GPOs
 $gpos = Get-GpResultantSetOfPolicy -ReportType Computer -ErrorAction SilentlyContinue
 
-$GPOInformations = [System.Collections.ArrayList]@()
+$GPOInformations = New-Object System.Collections.ArrayList
 foreach ($gpo in $gpos.AppliedGPOs)
 {
   $currentGPO = [PSCustomObject]@{
@@ -232,7 +232,7 @@ foreach ($gpo in $gpos.AppliedGPOs)
   $GPOInformations.Add($currentGPO)
 }
 
-$domainControllersList = [System.Collections.ArrayList]@()
+$domainControllersList = New-Object System.Collections.ArrayList
 
 # Retrieve the list of domain controllers
 $domain = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()
