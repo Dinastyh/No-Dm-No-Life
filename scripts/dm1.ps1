@@ -55,7 +55,7 @@ $net = [PSCustomObject]@{
 # Get the default web browser version
 $startupMenuPath = 'HKLM:\SOFTWARE\Clients\StartMenuInternet'
 $defaultInternetPath = 'HKLM:\SOFTWARE\Clients\StartMenuInternet'
-$browserVersion = Get-ItemProperty  $startupMenuPath | Select-Object -ExpandProperty (Get-ItemProperty $defaultInternetPath | Where-Object {$_.Default}).Version
+$browserVersion = Get-ItemProperty  $startupMenuPath | Select-Object Name FullName PSPath Version Authors
 
 # Get the names of installed browser add-ons
 $addOnsPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Ext\Settings'
@@ -167,7 +167,7 @@ $activeProcess = Get-Process | Select-Object Id,Name,MainWindowTitle
 #------------- Activeport -------------#
 
 # Get a list of active port
-$activeTCPPorts = Get-NetTCPConnection | Where-Object {$_.State -eq "Established"} | Select-Object LocalAddress,LocalPort,RemoteAddress,RemotePort | Format-Table
+$activeTCPPorts = Get-NetTCPConnection | Where-Object {$_.State -eq "Established"} | Select-Object LocalAddress,LocalPort,RemoteAddress,RemotePort
 
 #------------- Security -------------#
 
@@ -216,7 +216,7 @@ foreach ($av in $antivirus)
 
 # Retrieve the current SRP or AppLocker configuration
 $configSRP = Get-CimInstance -Namespace "root/SecurityCenter2" -ClassName "SecurityCenter2" |
-  Select-Object -ExpandProperty AppLockerEnabled, IsSoftwareRestrictionPolicyEnforced
+  Select-Object AppLockerEnabled, IsSoftwareRestrictionPolicyEnforced
 
 
 # Retrieve the list of applied GPOs
