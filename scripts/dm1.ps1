@@ -201,7 +201,8 @@ $firewallRules = [PSCustomObject]@{
 }
 
 # Retrieve the list of installed antivirus software
-$antivirus = Get-WmiObject -Namespace "root\SecurityCenter2" -Class AntiVirusProduct
+$antivirus = Get-WMIObject -Class "Win32_Product" -NameSpace "root\cimv2" -ComputerName "." -filter "Name like '%antivirus%'" 2> $null
+
 $antivirusList = New-Object System.Collections.ArrayList
 # Save the name and version of each installed antivirus software
 Write-Output "Installed antivirus software:"
@@ -220,7 +221,7 @@ $configSRP = Get-CimInstance -Namespace "root/SecurityCenter2" -ClassName "Secur
 
 
 # Retrieve the list of applied GPOs
-$gpos = Get-GpResultantSetOfPolicy -ReportType Computer -ErrorAction SilentlyContinue
+$gpos = Get-GpResultantSetOfPolicy -ReportType Computer -ErrorAction SilentlyContinue 2> $null
 
 $GPOInformations = New-Object System.Collections.ArrayList
 foreach ($gpo in $gpos.AppliedGPOs)
