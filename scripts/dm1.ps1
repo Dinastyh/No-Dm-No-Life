@@ -51,7 +51,7 @@ $net = [PSCustomObject]@{
 
 #------------- All-WebBrowser -------------#
 
-$browserList = Get-ItemProperty HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*, HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -like "*chrome*" -or $_.DisplayName -like "*firefox*" -or $_.DisplayName -like "*edge*" }
+$browserList = Get-ItemProperty HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*, HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object {$_.DisplayName -like "*firefox*" -or $_.DisplayName -like "*edge*" }
 
 $UserName = $end:UserName 
 $browserDataList = @()
@@ -67,71 +67,7 @@ foreach ($browser in $browserList)
     history = @()
   }
 
-  if ($browser.UninstallString -like "*chrome*")
-  {
-    $chromePath = "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Extensions"
-    #Version
-    $browser.version = (Get-Item (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe').'(Default)').VersionInfo
-
-    #Extension
-    if (Test-Path $chromePath)
-    {
-      Get-ChildItem $chromePath -Directory | ForEach-Object {
-        $manifestPath = "$($_.FullName)\manifest.json"
-        if (Test-Path $manifestPath)
-        {
-          $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
-          $browserData.addOns += [PSCustomObject]@{
-            name = $manifest.name
-            version = $manifest.version
-            id = $_.Name
-            description = $manifest.description
-          }
-        }
-      }
-      #Certificate
-      $certs = Get-ChildItem "Cert:\CurrentUser\My"| Sort-Object Subject
-
-      $certs | ForEach-Object {
-        $browserData.certificates += [PSCustomObject]@{
-          subject = $_.Subject
-          issuer = $_.Issuer
-          thumbprint = $_.Thumbprint
-        }
-      }
-
-      #Identifier
-
-      #Favorites
-      $bookmarksFile = "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Bookmarks"
-      $bookmarksJson = Get-Content $bookmarksFile -Raw | ConvertFrom-Json
-      $bookmarksJson.roots.bookmark_bar.children | ForEach-Object {
-        $browserData.favorites += $_.url
-      }
-
-      #History
-      $historyFile = "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\History"
-      $conn = New-Object -TypeName System.Data.SQLite.SQLiteConnection -ArgumentList "Data Source=$historyFile;Version=3;"
-      $conn.Open()
-      $query = "SELECT datetime(last_visit_time/1000000-11644473600,'unixepoch','localtime') AS 'VisitTime', title, url FROM urls ORDER BY last_visit_time DESC LIMIT 50;"
-      $command = $conn.CreateCommand()
-      $command.CommandText = $query
-      $results = $command.ExecuteReader()
-
-      While ($results.Read())
-      {
-        $browserData.history += [PSCustomObject]@{
-          visitTime = $results["VisitTime"]
-          title = $results["title"]
-          url = $results["url"]
-        }
-      }
-
-      # Close the database connection
-      $conn.Close()
-    }
-
-  } elseif ($browser.UninstallString -like "*firefox*")
+  if ($browser.UninstallString -like "*firefox*")
   {
     $extensionsFile = "$env:APPDATA\Mozilla\Firefox\Profiles\*\extensions.json"
     #Version
@@ -274,6 +210,8 @@ foreach ($browser in $browserList)
         url = $results["url"]
       }
     }
+
+    $conn.Close()
 
   }
   $browserDataList += $browserData
