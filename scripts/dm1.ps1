@@ -152,7 +152,7 @@ $applications = Get-ItemProperty $applications32Path, $applicationsPath|
 
 # Get information of start menu
 $startMenuPath = "$env:APPDATA\Microsoft\Windows\Start Menu"
-$startMenuItems = Get-ChildItem -Path $startMenuPath -Recurse | Where-Object { $_.Name -notlike "desktop.ini" } |Select-Object Name FullName PSPath Version Authors
+$startMenuItems = Get-ChildItem -Path $startMenuPath -Recurse | Where-Object { $_.Name -notlike "desktop.ini" } |Select-Object Name FullName PSPath
 
 #------------- Scheduled Tasks -------------#
 
