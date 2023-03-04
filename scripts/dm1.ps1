@@ -47,6 +47,39 @@ $net = [PSCustomObject]@{
 }
 
 #Miss wifi 
+# Get the default web browser version
+$startupMenuPath = 'HKLM:\SOFTWARE\Clients\StartMenuInternet'
+$defaultInternetPath = 'HKLM:\SOFTWARE\Clients\StartMenuInternet'
+$browserVersion = Get-ItemProperty  $startupMenuPath | Select-Object -ExpandProperty (Get-ItemProperty $defaultInternetPath | Where-Object {$_.Default}).Version
+
+# Get the names of installed browser add-ons
+$addOnsPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Ext\Settings'
+$addOns = Get-ChildItem $addOnsPath | Select-Object -ExpandProperty Name
+
+# Get the thumbprints of installed user certificates
+$certificatesPath = 'Cert:\CurrentUser\My'
+$certificates = Get-ChildItem $certificatesPath | Select-Object -ExpandProperty Thumbprint
+
+# Get the names of registered identifiers
+$identifiersPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\IdentityCRL\StoredIdentities'
+$identifiers = Get-ChildItem $identifiersPath | Select-Object -ExpandProperty Name
+
+# Get the URLs of user favorites
+$favoritesPath = "$env:USERPROFILE\Favorites"
+$favorites = (Get-ChildItem $favoritesPath -Recurse -Include *.url).FullName
+
+# Get the URLs and titles of browser history
+$historyPath = "$env:LOCALAPPDATA\Microsoft\Windows\WebCache\V01"
+$history = Get-ChildItem $historyPath -Recurse | Where-Object {$_.Name -eq "WebCacheV01.dat"} | Select-Object -ExpandProperty FullName | ForEach-Object {((New-Object -ComObject 'Shell.Application').NameSpace('shell:').ParseName($_).GetFolder).Items()} | Select-Object -Property Name, Folder
+
+$defaultWebBrowser = [PSCustomObject]@{
+  browserVersion = $browserVersion
+  addOns = $addOns
+  certificates = $certificates
+  identifiers = $identifiers
+  favorites = $favorites
+  history = $history
+}
 
 
 #------------- Longon cached -------------#
@@ -191,7 +224,7 @@ $security = [PSCustomObject]@{
 # Recap object
 $finalObject = [PSCustomObject]@{
   net = $net
-  WebBrowser = $browserDataList
+  WebBrowser = $defaultWebBrowser
   accounts = $accounts
   applications = $applications
   startMenu = $startMenuItems
