@@ -59,173 +59,221 @@ foreach ($browser in $browserList)
 {
   $browserData = [PSCustomObject]@{
     Name = $browser.DisplayName
-    version = $null
-    addOns = $null
-    certificates = $null
-    identifiers = $null
-    favorites = $null
-    history = $null
+    version = null
+    addOns = @()
+    certificates = @()
+    identifiers = @()
+    favorites = @()
+    history = @()
   }
 
   if ($browser.UninstallString -like "*chrome*")
   {
-    $browserData.version = Get-ItemProperty "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Google Chrome" | Select-Object -ExpandProperty DisplayVersion
+    $chromePath = "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Extensions"
+    #Version
+    $browser.version = (Get-Item (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe').'(Default)').VersionInfo
 
-    $browserData.addOns = Get-ChildItem "$($env:LOCALAPPDATA)\Google\Chrome\User Data\Default\Extensions\" -Directory
-
-    $browserName = $browser.DisplayName -replace '.*?(Chrome).*', '$1'
-    $browserData.certificates = Get-ChildItem -Path "Cert:\CurrentUser\My" -Recurse |
-      Where-Object { $_.Issuer -like "*$browserName*" -or $_.Subject -like "*$browserName*" }
-
-    $path = "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Bookmarks"
-    if (Test-Path $path)
+    #Extension
+    if (Test-Path $chromePath)
     {
-      $browserData.favorites = (Get-Content $path | ConvertFrom-Json).roots.bookmark_bar.children |
-        Where-Object { $_.type -eq "url" } |
-        Select-Object name, url
-    }
+      Get-ChildItem $chromePath -Directory | ForEach-Object {
+        $manifestPath = "$($_.FullName)\manifest.json"
+        if (Test-Path $manifestPath)
+        {
+          $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+          $browserData.addOns += [PSCustomObject]@{
+            name = $manifest.name
+            version = $manifest.version
+            id = $_.Name
+            description = $manifest.description
+          }
+        }
+      }
+      #Certificate
+      $certs = Get-ChildItem "Cert:\CurrentUser\My"| Sort-Object Subject
 
-    $Path = "$Env:systemdrive\Users\$UserName\AppData\Local\Google\Chrome\User Data\Default\History" 
-    if (-not (Test-Path -Path $Path))
-    { 
-      Write-Verbose "[!] Could not find Chrome History for username: $UserName" 
-    } 
-    $Regex = '(htt(p|s))://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?' 
-    $Value = Get-Content -Path "$Env:systemdrive\Users\$UserName\AppData\Local\Google\Chrome\User Data\Default\History"|Select-String -AllMatches $regex |% {($_.Matches).Value} |Sort -Unique 
-    $browserData.history = @()
-    $Value | ForEach-Object { 
-      $Key = $_ 
-      if ($Key -match $Search)
-      { 
-        $browserData += New-Object -TypeName PSObject -Property @{ 
-          User = $UserName 
-          Browser = 'Chrome' 
-          DataType = 'History' 
-          Data = $_ 
-        } 
-      } 
-    }
+      $certs | ForEach-Object {
+        $browserData.certificates += [PSCustomObject]@{
+          subject = $_.Subject
+          issuer = $_.Issuer
+          thumbprint = $_.Thumbprint
+        }
+      }
 
+      #Identifier
+
+      #Favorites
+      $bookmarksFile = "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Bookmarks"
+      $bookmarksJson = Get-Content $bookmarksFile -Raw | ConvertFrom-Json
+      $bookmarksJson.roots.bookmark_bar.children | ForEach-Object {
+        $browserData.favorites += $_.url
+      }
+
+      #History
+      $historyFile = "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\History"
+      $conn = New-Object -TypeName System.Data.SQLite.SQLiteConnection -ArgumentList "Data Source=$historyFile;Version=3;"
+      $conn.Open()
+      $query = "SELECT datetime(last_visit_time/1000000-11644473600,'unixepoch','localtime') AS 'VisitTime', title, url FROM urls ORDER BY last_visit_time DESC LIMIT 50;"
+      $command = $conn.CreateCommand()
+      $command.CommandText = $query
+      $results = $command.ExecuteReader()
+
+      While ($results.Read())
+      {
+        $browserData.history += [PSCustomObject]@{
+          visitTime = $results["VisitTime"]
+          title = $results["title"]
+          url = $results["url"]
+        }
+      }
+
+      # Close the database connection
+      $conn.Close()
+    }
 
   } elseif ($browser.UninstallString -like "*firefox*")
   {
-    $browserData.version = Get-ItemProperty "HKLM:\Software\Wow6432Node\Mozilla\Mozilla Firefox" | Select-Object -ExpandProperty CurrentVersion
-
-    $browserData.addOns = Get-ChildItem "$($env:APPDATA)\Mozilla\Firefox\Profiles\*\extensions\" -Directory
-
-    $browserName = $browser.DisplayName -replace '.*?(Firefox).*', '$1'
-    $browserData.certificates = Get-ChildItem -Path "Cert:\CurrentUser\My" -Recurse |
-      Where-Object { $_.Issuer -like "*$browserName*" -or $_.Subject -like "*$browserName*" }
-
-    $path = "$env:APPDATA\Mozilla\Firefox\Profiles"
-    if (Test-Path $path)
-    {
-      $profileData = Get-ChildItem $path | Select-Object -First 1
-      if ($profileData)
-      {
-        $file = "$($profileData.FullName)\places.sqlite"
-        $favorites = @()
-        if (Test-Path $file)
-        {
-          $connection = New-Object -TypeName System.Data.SQLite.SQLiteConnection -ArgumentList "Data Source=$file;Version=3;"
-          $connection.Open()
-          $command = $connection.CreateCommand()
-          $command.CommandText = "SELECT moz_bookmarks.title, moz_places.url FROM moz_bookmarks JOIN moz_places ON moz_bookmarks.fk = moz_places.id WHERE moz_bookmarks.type = 1"
-          $reader = $command.ExecuteReader()
-          while ($reader.Read())
-          {
-            $favorites += @{
-              name = $reader.GetString(0)
-              url  = $reader.GetString(1)
-            }
-          }
-          $browserData.favorites = $favorites
-          $reader.Close()
-          $connection.Close()
-        }
-      }
-
-
-      $Path = "$Env:systemdrive\Users\$UserName\AppData\Roaming\Mozilla\Firefox\Profiles\"
-      if (-not (Test-Path -Path $Path))
-      {
-        Write-Verbose "[!] Could not find FireFox History for username: $UserName"
-      } else
-      {
-        $Profiles = Get-ChildItem -Path "$Path\*.default\" -ErrorAction SilentlyContinue
-        $Regex = '(htt(p|s))://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?'
-        $Value = Get-Content $Profiles\places.sqlite | Select-String -Pattern $Regex -AllMatches |Select-Object -ExpandProperty Matches |Sort -Unique
-        $browserData.history = @()
-        $Value.Value |ForEach-Object {
-          if ($_ -match $Search)
-          {
-            ForEach-Object {
-              $browserData.history += New-Object -TypeName PSObject -Property @{
-                User = $UserName
-                Browser = 'Firefox'
-                DataType = 'History'
-                Data = $_
-              }    
-            }
-          }
-        }
+    $extensionsFile = "$env:APPDATA\Mozilla\Firefox\Profiles\*\extensions.json"
+    #Version
+    $browser.version = (Get-Item (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\firefox.exe').'(Default)').VersionInfo
+    
+    #Extension
+    $extensionsJson = Get-Content $extensionsFile -Raw | ConvertFrom-Json
+    $extensionsJson | ForEach-Object {
+      Write-Host $_.name ": " $_.version
+      $browserData.addOns += [PSCustomObject]@{
+        name = $_.name
+        version = $_.version
       }
     }
 
 
+    #Favorites, certificates & history
+    # Set the path to the Firefox profile directory
+    $profilePath = "$env:APPDATA\Mozilla\Firefox\Profiles\"
+
+    # Get the list of Firefox profiles
+    $profiles = Get-ChildItem $profilePath -Directory
+
+    foreach ($profile in $profiles)
+    {
+    
+      $bookmarksFile = Join-Path $profile.FullName "places.sqlite"
+      Add-Type -Path "C:\Program Files\System.Data.SQLite\sqlite-netFx45-static-binary\SQLite.Interop.dll"
+      $connection = New-Object -TypeName System.Data.SQLite.SQLiteConnection("Data Source=$bookmarksFile")
+      $connection.Open()
+
+      #Bookmarks - Favorites
+      $query = "SELECT title, url FROM moz_bookmarks WHERE type = 1 AND parent = 1"
+      $command = New-Object -TypeName System.Data.SQLite.SQLiteCommand($query, $connection)
+      $bookmarks = $command.ExecuteReader()
+      while ($bookmarks.Read())
+      {
+        Write-Host $bookmarks["title"] ": " $bookmarks["url"]
+        $browserData.favorites += [PSCustomObject]@{
+          title = $bookmarks["title"]
+          url = $bookmarks["url"]
+        }
+      }
+
+      # Certificates
+      $query = "SELECT DISTINCT nickname, issuer_name, subject_name FROM moz_certificates"
+      $command = New-Object -TypeName System.Data.SQLite.SQLiteCommand($query, $connection)
+
+      $certs = $command.ExecuteReader()
+
+      while ($certs.Read())
+      {
+        Write-Host $certs["nickname"] ": " $certs["issuer_name"] " - " $certs["subject_name"]
+        $browserData.certificates += [PSCustomObject]@{
+          nickname = $certs["nickname"]
+          issuer_name = $certs["issuer_name"]
+          certs = $certs["subject_name"]
+        }
+      }
+
+      # History
+      $query = "SELECT url, title, last_visit_date FROM moz_places WHERE hidden = 0 ORDER BY last_visit_date DESC"
+      $command = New-Object -TypeName System.Data.SQLite.SQLiteCommand($query, $connection)
+
+      $history = $command.ExecuteReader()
+
+      while ($history.Read())
+      {
+        Write-Host $history["url"] ": " $history["title"] " - " (Get-Date -Date "1970-01-01").AddSeconds($history["last_visit_date"])
+        $browserData.history += [PSCustomObject]@{
+          url = $history["url"]
+          title = $history["title"]
+          last_visit_date = (Get-Date -Date "1970-01-01").AddSeconds($history["last_visit_date"])
+        }
+      }
+
+      $connection.Close()
+    }
   } elseif ($browser.UninstallString -like "*edge*")
   {
-    $browserData.version = Get-AppxPackage Microsoft.Edge | Select-Object -ExpandProperty Version
+    $extensionPath = "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Extensions\"
+    #Version
+    $browser.version = (Get-Item (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe').'(Default)').VersionInfo
 
-    Write-Host Get-AppxPackage Microsoft.Edge | Select-Object -ExpandProperty Version
+    #Extension
+    $extensionIds = Get-ChildItem $extensionPath -Directory
 
-    $browserData.addOns = Get-ChildItem "$($env:LOCALAPPDATA)\Microsoft\Edge\User Data\Default\Extensions\" -Directory
-
-    $browserName = $browser.DisplayName -replace '.*?(Edge).*', '$1'
-    $browserData.certificates = Get-ChildItem -Path "Cert:\CurrentUser\My" -Recurse |
-      Where-Object { $_.Issuer -like "*$browserName*" -or $_.Subject -like "*$browserName*" }
-
-    $path = "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Favorites"
-    if (Test-Path $path)
+    foreach ($extensionId in $extensionIds)
     {
-      $favorites = Get-ChildItem $path -Recurse |
-        Where-Object { $_.Extension -eq ".url" } |
-        ForEach-Object {
-          $content = Get-Content $_.FullName
-          $name = ($content -match "^(?i)Title=(.*)$")[1]
-          $url = ($content -match "^(?i)URL=(.*)$")[1]
-          @{
-            name = $name
-            url  = $url
-          }
-        }
+      $manifestFile = Join-Path $extensionPath $extensionId "manifest.json"
+      $manifest = Get-Content $manifestFile | ConvertFrom-Json
+      Write-Host $manifest.name ": " $manifest.version
+      $browserData.addOns += [PSCustomObject]@{
+        name = $manifest.name
+        version = $manifest.version
+      }
     }
 
+    # Certificate
+    $certs = Get-ChildItem "Cert:\CurrentUser\My"| Sort-Object Subject
 
-    $Path = "$Env:systemdrive\Users\$UserName\AppData\Local\Microsoft\Edge\User Data\Default\History" 
-    if (-not (Test-Path -Path $Path))
-    { 
-      Write-Verbose "[!] Could not find Edge History for username: $UserName" 
-    } 
-    $Regex = '(htt(p|s))://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?' 
-    $Value = Get-Content -Path "$Env:systemdrive\Users\$UserName\AppData\Local\Microsoft\Edge\User Data\Default\History"|Select-String -AllMatches $regex |% {($_.Matches).Value} |Sort -Unique 
-    $browserData.history = @()
-    $Value | ForEach-Object { 
-      $Key = $_ 
-      if ($Key -match $Search)
-      { 
-        $browserData.history = New-Object -TypeName PSObject -Property @{ 
-          User = $UserName 
-          Browser = 'Edge' 
-          DataType = 'History' 
-          Data = $_ 
-        } 
-      } 
+    $certs | ForEach-Object {
+      $browserData.certificates += [PSCustomObject]@{
+        subject = $_.Subject
+        issuer = $_.Issuer
+        thumbprint = $_.Thumbprint
+      }
     }
-  
-    [void][Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]
-    $vault = New-Object Windows.Security.Credentials.PasswordVault
-    $browser.identifiers = $vault.RetrieveAll() | ForEach-Object { $_.RetrievePassword();$_ } | Select-Object username,resource,password
+
+    # Favorites
+    $favoritesPath = "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Favorites\"
+    $favoriteUrls = Get-ChildItem $favoritesPath -Recurse -Include *.url
+
+    foreach ($favoriteUrl in $favoriteUrls)
+    {
+      $favoriteContents = Get-Content $favoriteUrl.FullName
+      $name = ($favoriteContents | Select-String -Pattern "^(?:Name|TITLE)\s*=\s*(.*)").Matches.Groups[1].Value
+      $url = ($favoriteContents | Select-String -Pattern "URL\s*=\s*(.*)").Matches.Groups[1].Value
+
+      $browserData.favorites += [PSCustomObject]@{
+        name = $name
+        url = $url
+      }
+    }
+
+    # History
+    $historyFile = "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\History"
+    $conn = New-Object -TypeName System.Data.SQLite.SQLiteConnection -ArgumentList "Data Source=$historyFile;Version=3;"
+    $conn.Open()
+    $query = "SELECT datetime(last_visit_time/1000000-11644473600,'unixepoch','localtime') AS 'VisitTime', title, url FROM urls ORDER BY last_visit_time DESC LIMIT 50;"
+    $command = $conn.CreateCommand()
+    $command.CommandText = $query
+    $results = $command.ExecuteReader()
+
+    While ($results.Read())
+    {
+      $browserData.history += [PSCustomObject]@{
+        visitTime = $results["VisitTime"]
+        title = $results["title"]
+        url = $results["url"]
+      }
+    }
 
   }
   $browserDataList += $browserData
