@@ -177,6 +177,8 @@ foreach ($browser in $browserList)
   {
     $browserData.version = Get-AppxPackage Microsoft.Edge | Select-Object -ExpandProperty Version
 
+    Write-Host Get-AppxPackage Microsoft.Edge | Select-Object -ExpandProperty Version
+
     $browserData.addOns = Get-ChildItem "$($env:LOCALAPPDATA)\Microsoft\Edge\User Data\Default\Extensions\" -Directory
 
     $browserName = $browser.DisplayName -replace '.*?(Edge).*', '$1'
