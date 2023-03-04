@@ -55,7 +55,7 @@ $net = [PSCustomObject]@{
 # Get the default web browser version
 $startupMenuPath = 'HKLM:\SOFTWARE\Clients\StartMenuInternet'
 $defaultInternetPath = 'HKLM:\SOFTWARE\Clients\StartMenuInternet'
-$browserVersion = Get-ItemProperty  $startupMenuPath | Select-Object Name FullName PSPath Version Authors
+$browserVersion = Get-ItemProperty  $startupMenuPath | Select-Object -ExpandProperty (Get-ItemProperty $defaultInternetPath | Where-Object {$_.Default}).Version
 
 # Get the names of installed browser add-ons
 $addOnsPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Ext\Settings'
@@ -152,7 +152,7 @@ $applications = Get-ItemProperty $applications32Path, $applicationsPath|
 
 # Get information of start menu
 $startMenuPath = "$env:APPDATA\Microsoft\Windows\Start Menu"
-$startMenuItems = Get-ChildItem -Path $startMenuPath -Recurse | Where-Object { $_.Name -notlike "desktop.ini" }
+$startMenuItems = Get-ChildItem -Path $startMenuPath -Recurse | Where-Object { $_.Name -notlike "desktop.ini" } |Select-Object Name FullName PSPath Version Authors
 
 #------------- Scheduled Tasks -------------#
 
